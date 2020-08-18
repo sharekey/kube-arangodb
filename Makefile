@@ -58,10 +58,9 @@ endif
 
 HELM_PACKAGE_CMD = $(HELM) package "$(ROOTDIR)/chart/$(CHART_NAME)" \
                            -d "$(ROOTDIR)/bin/charts" \
-                           --save=false --version "$(VERSION_MAJOR_MINOR_PATCH)"
+                           --version "$(VERSION_MAJOR_MINOR_PATCH)"
 
-HELM_CMD = $(HELM) template "$(ROOTDIR)/chart/$(CHART_NAME)" \
-         	       --name "$(NAME)" \
+HELM_CMD = $(HELM) template "$(NAME)" "$(ROOTDIR)/chart/$(CHART_NAME)" \
          	       --set "operator.image=$(OPERATORIMAGE)" \
          	       --set "operator.imagePullPolicy=Always" \
          	       --set "operator.resources=null" \
@@ -82,7 +81,7 @@ ifeq ($(DEBUG),true)
 	DEBUG := true
 	DOCKERFILE := Dockerfile.debug
 	# required by DLV https://github.com/go-delve/delve/blob/master/Documentation/usage/dlv_exec.md
-	COMPILE_DEBUG_FLAGS := -gcflags="all=-N -l" -ldflags "-extldflags '-static'" 
+	COMPILE_DEBUG_FLAGS := -gcflags="all=-N -l" -ldflags "-extldflags '-static'"
 else
 	DEBUG := false
 	DOCKERFILE := Dockerfile
@@ -97,7 +96,6 @@ ifndef MANIFESTSUFFIX
 	MANIFESTSUFFIX := -dev
 endif
 endif
-MANIFESTPATHCRD := manifests/arango-crd$(MANIFESTSUFFIX).yaml
 MANIFESTPATHDEPLOYMENT := manifests/arango-deployment$(MANIFESTSUFFIX).yaml
 MANIFESTPATHDEPLOYMENTREPLICATION := manifests/arango-deployment-replication$(MANIFESTSUFFIX).yaml
 MANIFESTPATHBACKUP := manifests/arango-backup$(MANIFESTSUFFIX).yaml
@@ -106,7 +104,6 @@ MANIFESTPATHK2KCLUSTERSYNC := manifests/arango-k2kclustersync$(MANIFESTSUFFIX).y
 MANIFESTPATHSTORAGE := manifests/arango-storage$(MANIFESTSUFFIX).yaml
 MANIFESTPATHALL := manifests/arango-all$(MANIFESTSUFFIX).yaml
 MANIFESTPATHTEST := manifests/arango-test$(MANIFESTSUFFIX).yaml
-KUSTOMIZEPATHCRD := manifests/kustomize/crd/arango-crd$(MANIFESTSUFFIX).yaml
 KUSTOMIZEPATHDEPLOYMENT := manifests/kustomize/deployment/arango-deployment$(MANIFESTSUFFIX).yaml
 KUSTOMIZEPATHDEPLOYMENTREPLICATION := manifests/kustomize/deployment-replication/arango-deployment-replication$(MANIFESTSUFFIX).yaml
 KUSTOMIZEPATHBACKUP := manifests/kustomize/backup/arango-backup$(MANIFESTSUFFIX).yaml
@@ -330,8 +327,6 @@ endef
 .PHONY: manifests
 manifests:
 
-$(eval $(call manifest-generator, crd, kube-arangodb-crd))
-
 $(eval $(call manifest-generator, test, kube-arangodb-test))
 
 $(eval $(call manifest-generator, deployment, kube-arangodb, \
@@ -389,13 +384,6 @@ $(eval $(call manifest-generator, all, kube-arangodb, \
        --set "operator.features.apps=true" \
        --set "operator.features.k8sToK8sClusterSync=true" \
        --set "operator.features.backup=true"))
-
-.PHONY: chart-crd
-chart-crd: export CHART_NAME := kube-arangodb-crd
-chart-crd: helm
-	@mkdir -p "$(ROOTDIR)/bin/charts"
-	@$(HELM_PACKAGE_CMD)
-manifests: chart-crd
 
 .PHONY: chart-operator
 chart-operator: export CHART_NAME := kube-arangodb
