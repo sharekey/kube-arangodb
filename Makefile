@@ -58,10 +58,9 @@ endif
 
 HELM_PACKAGE_CMD = $(HELM) package "$(ROOTDIR)/chart/$(CHART_NAME)" \
                            -d "$(ROOTDIR)/bin/charts" \
-                           --save=false --version "$(VERSION_MAJOR_MINOR_PATCH)"
+                           --version "$(VERSION_MAJOR_MINOR_PATCH)"
 
-HELM_CMD = $(HELM) template "$(ROOTDIR)/chart/$(CHART_NAME)" \
-         	       --name "$(NAME)" \
+HELM_CMD = $(HELM) template "$(NAME)" "$(ROOTDIR)/chart/$(CHART_NAME)" \
          	       --set "operator.image=$(OPERATORIMAGE)" \
          	       --set "operator.imagePullPolicy=Always" \
          	       --set "operator.resources=null" \
