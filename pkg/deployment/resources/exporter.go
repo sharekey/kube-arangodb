@@ -61,10 +61,10 @@ func ArangodbExporterContainer(image string, args []string, livenessProbe *probe
 }
 
 func createInternalExporterArgs(spec api.DeploymentSpec, groupSpec api.ServerGroupSpec, version driver.Version) []string {
-	tokenpath := filepath.Join(shared.ExporterJWTVolumeMountDir, constants.SecretKeyToken)
 	options := k8sutil.CreateOptionPairs(64)
 
-	if spec.Authentication.IsAuthenticated() {
+	tokenpath := filepath.Join(shared.ExporterJWTVolumeMountDir, constants.SecretKeyToken)
+	if spec.Authentication.IsAuthenticated() && spec.Metrics.GetJWTTokenSecretName() != "" {
 		options.Add("--arangodb.jwt-file", tokenpath)
 	}
 
