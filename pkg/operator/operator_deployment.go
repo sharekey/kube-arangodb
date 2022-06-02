@@ -21,6 +21,7 @@
 package operator
 
 import (
+	"fmt"
 	deploymentType "github.com/arangodb/kube-arangodb/pkg/apis/deployment"
 	"github.com/arangodb/kube-arangodb/pkg/logging"
 	"github.com/arangodb/kube-arangodb/pkg/util/errors"
@@ -49,7 +50,7 @@ func (o *Operator) runDeployments(stop <-chan struct{}) {
 		o.log,
 		o.Client.Arango().DatabaseV1().RESTClient(),
 		deploymentType.ArangoDeploymentResourcePlural,
-		o.Config.Namespace,
+		o.Config.WatchNamespace,
 		&api.ArangoDeployment{},
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    o.onAddArangoDeployment,
@@ -69,6 +70,7 @@ func (o *Operator) onAddArangoDeployment(obj interface{}) {
 	apiObject := obj.(*api.ArangoDeployment)
 	o.log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetNamespace()).
 		Msg("ArangoDeployment added")
 	o.syncArangoDeployment(apiObject)
 }
@@ -81,6 +83,7 @@ func (o *Operator) onUpdateArangoDeployment(oldObj, newObj interface{}) {
 	apiObject := newObj.(*api.ArangoDeployment)
 	o.log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetNamespace()).
 		Msg("ArangoDeployment updated")
 	o.syncArangoDeployment(apiObject)
 }
@@ -106,6 +109,7 @@ func (o *Operator) onDeleteArangoDeployment(obj interface{}) {
 	}
 	log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetNamespace()).
 		Msg("ArangoDeployment deleted")
 	ev := &Event{
 		Type:       kwatch.Deleted,
@@ -129,7 +133,8 @@ func (o *Operator) syncArangoDeployment(apiObject *api.ArangoDeployment) {
 	// re-watch or restart could give ADD event.
 	// If for an ADD event the cluster spec is invalid then it is not added to the local cache
 	// so modifying that deployment will result in another ADD event
-	if _, ok := o.deployments[apiObject.Name]; ok {
+	deploymentKey := fmt.Sprintf("%s/%s", apiObject.Namespace, apiObject.Name)
+	if _, ok := o.deployments[deploymentKey]; ok {
 		ev.Type = kwatch.Modified
 	}
 
@@ -144,20 +149,21 @@ func (o *Operator) syncArangoDeployment(apiObject *api.ArangoDeployment) {
 // handleDeploymentEvent processed the given event.
 func (o *Operator) handleDeploymentEvent(event *Event) error {
 	apiObject := event.Deployment
+	deploymentKey := fmt.Sprintf("%s/%s", apiObject.Namespace, apiObject.Name)
 
 	if apiObject.Status.Phase.IsFailed() {
 		deploymentsFailed.Inc()
 		if event.Type == kwatch.Deleted {
-			delete(o.deployments, apiObject.Name)
+			delete(o.deployments, deploymentKey)
 			return nil
 		}
-		return errors.WithStack(errors.Newf("ignore failed deployment (%s). Please delete its CR", apiObject.Name))
+		return errors.WithStack(errors.Newf("ignore failed deployment (%s). Please delete its CR", deploymentKey))
 	}
 
 	switch event.Type {
 	case kwatch.Added:
-		if _, ok := o.deployments[apiObject.Name]; ok {
-			return errors.WithStack(errors.Newf("unsafe state. deployment (%s) was created before but we received event (%s)", apiObject.Name, event.Type))
+		if _, ok := o.deployments[deploymentKey]; ok {
+			return errors.WithStack(errors.Newf("unsafe state. deployment (%s) was created before but we received event (%s)", deploymentKey, event.Type))
 		}
 
 		// Fill in defaults
@@ -172,26 +178,26 @@ func (o *Operator) handleDeploymentEvent(event *Event) error {
 		if err != nil {
 			return errors.WithStack(errors.Newf("failed to create deployment: %s", err))
 		}
-		o.deployments[apiObject.Name] = nc
+		o.deployments[deploymentKey] = nc
 
 		deploymentsCreated.Inc()
 		deploymentsCurrent.Set(float64(len(o.deployments)))
 
 	case kwatch.Modified:
-		depl, ok := o.deployments[apiObject.Name]
+		depl, ok := o.deployments[deploymentKey]
 		if !ok {
-			return errors.WithStack(errors.Newf("unsafe state. deployment (%s) was never created but we received event (%s)", apiObject.Name, event.Type))
+			return errors.WithStack(errors.Newf("unsafe state. deployment (%s) was never created but we received event (%s)", deploymentKey, event.Type))
 		}
 		depl.Update(apiObject)
 		deploymentsModified.Inc()
 
 	case kwatch.Deleted:
-		depl, ok := o.deployments[apiObject.Name]
+		depl, ok := o.deployments[deploymentKey]
 		if !ok {
-			return errors.WithStack(errors.Newf("unsafe state. deployment (%s) was never created but we received event (%s)", apiObject.Name, event.Type))
+			return errors.WithStack(errors.Newf("unsafe state. deployment (%s) was never created but we received event (%s)", deploymentKey, event.Type))
 		}
 		depl.Delete()
-		delete(o.deployments, apiObject.Name)
+		delete(o.deployments, deploymentKey)
 		deploymentsDeleted.Inc()
 		deploymentsCurrent.Set(float64(len(o.deployments)))
 	}
@@ -210,7 +216,7 @@ func (o *Operator) makeDeploymentConfigAndDeps(apiObject *api.ArangoDeployment) 
 	}
 	deps := deployment.Dependencies{
 		Log: o.Dependencies.LogService.MustGetLogger(logging.LoggerNameDeployment).With().
-			Str("deployment", apiObject.GetName()).
+			Str("deployment", fmt.Sprintf("%s/%s", apiObject.GetName(), apiObject.GetNamespace())).
 			Logger(),
 		Client:        o.Client,
 		EventRecorder: o.EventRecorder,

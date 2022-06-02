@@ -26,8 +26,9 @@ func AsScope(s string) (Scope, bool) {
 		return LegacyScope, true
 	case NamespacedScope.String():
 		return NamespacedScope, true
+	case ClusterScope.String():
+		return ClusterScope, true
 	}
-
 	return "", false
 }
 
@@ -41,9 +42,14 @@ func (s Scope) IsNamespaced() bool {
 	return s == NamespacedScope
 }
 
+func (s Scope) IsCluster() bool {
+	return s == ClusterScope
+}
+
 const (
 	LegacyScope     Scope = "legacy"
 	NamespacedScope Scope = "namespaced"
+	ClusterScope    Scope = "cluster"
 
 	DefaultScope = LegacyScope
 )

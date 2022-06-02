@@ -21,6 +21,7 @@
 package operator
 
 import (
+	"fmt"
 	replication2 "github.com/arangodb/kube-arangodb/pkg/apis/replication"
 	"github.com/arangodb/kube-arangodb/pkg/logging"
 	"github.com/arangodb/kube-arangodb/pkg/util/errors"
@@ -49,7 +50,7 @@ func (o *Operator) runDeploymentReplications(stop <-chan struct{}) {
 		o.log,
 		o.Dependencies.Client.Arango().ReplicationV1().RESTClient(),
 		replication2.ArangoDeploymentReplicationResourcePlural,
-		o.Config.Namespace,
+		o.Config.WatchNamespace,
 		&api.ArangoDeploymentReplication{},
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    o.onAddArangoDeploymentReplication,
@@ -69,6 +70,7 @@ func (o *Operator) onAddArangoDeploymentReplication(obj interface{}) {
 	apiObject := obj.(*api.ArangoDeploymentReplication)
 	o.log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetNamespace()).
 		Msg("ArangoDeploymentReplication added")
 	o.syncArangoDeploymentReplication(apiObject)
 }
@@ -81,6 +83,7 @@ func (o *Operator) onUpdateArangoDeploymentReplication(oldObj, newObj interface{
 	apiObject := newObj.(*api.ArangoDeploymentReplication)
 	o.log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetNamespace()).
 		Msg("ArangoDeploymentReplication updated")
 	o.syncArangoDeploymentReplication(apiObject)
 }
@@ -106,6 +109,7 @@ func (o *Operator) onDeleteArangoDeploymentReplication(obj interface{}) {
 	}
 	log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetNamespace()).
 		Msg("ArangoDeploymentReplication deleted")
 	ev := &Event{
 		Type:                  kwatch.Deleted,
@@ -129,7 +133,8 @@ func (o *Operator) syncArangoDeploymentReplication(apiObject *api.ArangoDeployme
 	// re-watch or restart could give ADD event.
 	// If for an ADD event the cluster spec is invalid then it is not added to the local cache
 	// so modifying that deployment will result in another ADD event
-	if _, ok := o.deploymentReplications[apiObject.Name]; ok {
+	deploymentReplicationKey := fmt.Sprintf("%s/%s", apiObject.Namespace, apiObject.Name)
+	if _, ok := o.deploymentReplications[deploymentReplicationKey]; ok {
 		ev.Type = kwatch.Modified
 	}
 
@@ -144,20 +149,21 @@ func (o *Operator) syncArangoDeploymentReplication(apiObject *api.ArangoDeployme
 // handleDeploymentReplicationEvent processed the given event.
 func (o *Operator) handleDeploymentReplicationEvent(event *Event) error {
 	apiObject := event.DeploymentReplication
+	deploymentReplicationKey := fmt.Sprintf("%s/%s", apiObject.Namespace, apiObject.Name)
 
 	if apiObject.Status.Phase.IsFailed() {
 		deploymentReplicationsFailed.Inc()
 		if event.Type == kwatch.Deleted {
-			delete(o.deploymentReplications, apiObject.Name)
+			delete(o.deploymentReplications, deploymentReplicationKey)
 			return nil
 		}
-		return errors.WithStack(errors.Newf("ignore failed deployment replication (%s). Please delete its CR", apiObject.Name))
+		return errors.WithStack(errors.Newf("ignore failed deployment replication (%s). Please delete its CR", deploymentReplicationKey))
 	}
 
 	switch event.Type {
 	case kwatch.Added:
-		if _, ok := o.deploymentReplications[apiObject.Name]; ok {
-			return errors.WithStack(errors.Newf("unsafe state. deployment replication (%s) was created before but we received event (%s)", apiObject.Name, event.Type))
+		if _, ok := o.deploymentReplications[deploymentReplicationKey]; ok {
+			return errors.WithStack(errors.Newf("unsafe state. deployment replication (%s) was created before but we received event (%s)", deploymentReplicationKey, event.Type))
 		}
 
 		// Fill in defaults
@@ -172,26 +178,26 @@ func (o *Operator) handleDeploymentReplicationEvent(event *Event) error {
 		if err != nil {
 			return errors.WithStack(errors.Newf("failed to create deployment: %s", err))
 		}
-		o.deploymentReplications[apiObject.Name] = nc
+		o.deploymentReplications[deploymentReplicationKey] = nc
 
 		deploymentReplicationsCreated.Inc()
 		deploymentReplicationsCurrent.Set(float64(len(o.deploymentReplications)))
 
 	case kwatch.Modified:
-		repl, ok := o.deploymentReplications[apiObject.Name]
+		repl, ok := o.deploymentReplications[deploymentReplicationKey]
 		if !ok {
-			return errors.WithStack(errors.Newf("unsafe state. deployment replication (%s) was never created but we received event (%s)", apiObject.Name, event.Type))
+			return errors.WithStack(errors.Newf("unsafe state. deployment replication (%s) was never created but we received event (%s)", deploymentReplicationKey, event.Type))
 		}
 		repl.Update(apiObject)
 		deploymentReplicationsModified.Inc()
 
 	case kwatch.Deleted:
-		repl, ok := o.deploymentReplications[apiObject.Name]
+		repl, ok := o.deploymentReplications[deploymentReplicationKey]
 		if !ok {
-			return errors.WithStack(errors.Newf("unsafe state. deployment replication (%s) was never created but we received event (%s)", apiObject.Name, event.Type))
+			return errors.WithStack(errors.Newf("unsafe state. deployment replication (%s) was never created but we received event (%s)", deploymentReplicationKey, event.Type))
 		}
 		repl.Delete()
-		delete(o.deploymentReplications, apiObject.Name)
+		delete(o.deploymentReplications, deploymentReplicationKey)
 		deploymentReplicationsDeleted.Inc()
 		deploymentReplicationsCurrent.Set(float64(len(o.deploymentReplications)))
 	}
@@ -201,11 +207,12 @@ func (o *Operator) handleDeploymentReplicationEvent(event *Event) error {
 // makeDeploymentReplicationConfigAndDeps creates a Config & Dependencies object for a new DeploymentReplication.
 func (o *Operator) makeDeploymentReplicationConfigAndDeps(apiObject *api.ArangoDeploymentReplication) (replication.Config, replication.Dependencies) {
 	cfg := replication.Config{
-		Namespace: o.Config.Namespace,
+		Namespace:      o.Config.Namespace,
+		WatchNamespace: o.Config.WatchNamespace,
 	}
 	deps := replication.Dependencies{
 		Log: o.Dependencies.LogService.MustGetLogger(logging.LoggerNameDeploymentReplication).With().
-			Str("deployment-replication", apiObject.GetName()).
+			Str("deployment-replication", fmt.Sprintf("%s/%s", apiObject.GetName(), apiObject.GetNamespace())).
 			Logger(),
 		Client:        o.Client,
 		EventRecorder: o.Dependencies.EventRecorder,

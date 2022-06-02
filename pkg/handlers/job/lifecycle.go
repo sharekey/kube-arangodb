@@ -43,7 +43,7 @@ func (h *handler) LifecyclePreStart() error {
 	}()
 
 	for {
-		_, err := h.client.AppsV1().ArangoJobs(h.operator.Namespace()).List(context.Background(), meta.ListOptions{})
+		_, err := h.client.AppsV1().ArangoJobs(h.operator.WatchNamespace()).List(context.Background(), meta.ListOptions{})
 
 		if err != nil {
 			log.Warn().Err(err).Msgf("CR for %s not found", apps.ArangoJobResourceKind)

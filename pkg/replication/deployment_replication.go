@@ -42,7 +42,8 @@ import (
 
 // Config holds configuration settings for a DeploymentReplication
 type Config struct {
-	Namespace string
+	Namespace      string
+	WatchNamespace string
 }
 
 // Dependencies holds dependent services for a DeploymentReplication

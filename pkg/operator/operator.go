@@ -92,6 +92,7 @@ type Operator struct {
 type Config struct {
 	ID                          string
 	Namespace                   string
+	WatchNamespace              string
 	PodName                     string
 	ServiceAccount              string
 	OperatorImage               string
@@ -254,7 +255,7 @@ func (o *Operator) onStartK2KClusterSync(stop <-chan struct{}) {
 // onStartOperatorV2 run the operatorV2 type
 func (o *Operator) onStartOperatorV2(operatorType operatorV2type, stop <-chan struct{}) {
 	operatorName := fmt.Sprintf("arangodb-%s-operator", operatorType)
-	operator := operatorV2.NewOperator(o.Dependencies.LogService.MustGetLogger(logging.LoggerNameReconciliation), operatorName, o.Namespace, o.OperatorImage)
+	operator := operatorV2.NewOperator(o.Dependencies.LogService.MustGetLogger(logging.LoggerNameReconciliation), operatorName, o.Namespace, o.WatchNamespace, o.OperatorImage)
 
 	rand.Seed(time.Now().Unix())
 
@@ -277,12 +278,12 @@ func (o *Operator) onStartOperatorV2(operatorType operatorV2type, stop <-chan st
 
 	eventRecorder := event.NewEventRecorder(o.Dependencies.LogService.MustGetLogger(logging.LoggerNameEventRecorder), operatorName, kubeClientSet)
 
-	arangoInformer := arangoInformer.NewSharedInformerFactoryWithOptions(arangoClientSet, 10*time.Second, arangoInformer.WithNamespace(o.Namespace))
+	arangoInformer := arangoInformer.NewSharedInformerFactoryWithOptions(arangoClientSet, 10*time.Second, arangoInformer.WithNamespace(o.WatchNamespace))
 
 	switch operatorType {
 	case appsOperator:
 		checkFn := func() error {
-			_, err := o.Client.Arango().AppsV1().ArangoJobs(o.Namespace).List(context.Background(), meta.ListOptions{})
+			_, err := o.Client.Arango().AppsV1().ArangoJobs(o.WatchNamespace).List(context.Background(), meta.ListOptions{})
 			return err
 		}
 		o.waitForCRD(apps.ArangoJobCRDName, checkFn)
@@ -292,7 +293,7 @@ func (o *Operator) onStartOperatorV2(operatorType operatorV2type, stop <-chan st
 		}
 	case backupOperator:
 		checkFn := func() error {
-			_, err := o.Client.Arango().BackupV1().ArangoBackups(o.Namespace).List(context.Background(), meta.ListOptions{})
+			_, err := o.Client.Arango().BackupV1().ArangoBackups(o.WatchNamespace).List(context.Background(), meta.ListOptions{})
 			return err
 		}
 		o.waitForCRD(backupdef.ArangoBackupCRDName, checkFn)
@@ -302,7 +303,7 @@ func (o *Operator) onStartOperatorV2(operatorType operatorV2type, stop <-chan st
 		}
 
 		checkFn = func() error {
-			_, err := o.Client.Arango().BackupV1().ArangoBackupPolicies(o.Namespace).List(context.Background(), meta.ListOptions{})
+			_, err := o.Client.Arango().BackupV1().ArangoBackupPolicies(o.WatchNamespace).List(context.Background(), meta.ListOptions{})
 			return err
 		}
 		o.waitForCRD(backupdef.ArangoBackupPolicyCRDName, checkFn)
@@ -312,7 +313,7 @@ func (o *Operator) onStartOperatorV2(operatorType operatorV2type, stop <-chan st
 		}
 	case k2KClusterSyncOperator:
 		checkFn := func() error {
-			_, err := o.Client.Arango().DatabaseV1().ArangoClusterSynchronizations(o.Namespace).List(context.Background(), meta.ListOptions{})
+			_, err := o.Client.Arango().DatabaseV1().ArangoClusterSynchronizations(o.WatchNamespace).List(context.Background(), meta.ListOptions{})
 			return err
 		}
 		o.waitForCRD(depldef.ArangoClusterSynchronizationCRDName, checkFn)

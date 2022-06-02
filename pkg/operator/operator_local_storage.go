@@ -21,8 +21,10 @@
 package operator
 
 import (
+	"fmt"
 	"github.com/arangodb/kube-arangodb/pkg/logging"
 	"github.com/arangodb/kube-arangodb/pkg/util/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 
@@ -47,7 +49,7 @@ func (o *Operator) runLocalStorages(stop <-chan struct{}) {
 		o.log,
 		o.Dependencies.Client.Arango().StorageV1alpha().RESTClient(),
 		api.ArangoLocalStorageResourcePlural,
-		"", //o.Config.Namespace,
+		metav1.NamespaceAll,
 		&api.ArangoLocalStorage{},
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    o.onAddArangoLocalStorage,
@@ -67,6 +69,7 @@ func (o *Operator) onAddArangoLocalStorage(obj interface{}) {
 	apiObject := obj.(*api.ArangoLocalStorage)
 	o.log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetName()).
 		Msg("ArangoLocalStorage added")
 	o.syncArangoLocalStorage(apiObject)
 }
@@ -79,6 +82,7 @@ func (o *Operator) onUpdateArangoLocalStorage(oldObj, newObj interface{}) {
 	apiObject := newObj.(*api.ArangoLocalStorage)
 	o.log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetName()).
 		Msg("ArangoLocalStorage updated")
 	o.syncArangoLocalStorage(apiObject)
 }
@@ -104,6 +108,7 @@ func (o *Operator) onDeleteArangoLocalStorage(obj interface{}) {
 	}
 	log.Debug().
 		Str("name", apiObject.GetObjectMeta().GetName()).
+		Str("namespace", apiObject.GetObjectMeta().GetName()).
 		Msg("ArangoLocalStorage deleted")
 	ev := &Event{
 		Type:         kwatch.Deleted,
@@ -127,7 +132,8 @@ func (o *Operator) syncArangoLocalStorage(apiObject *api.ArangoLocalStorage) {
 	// re-watch or restart could give ADD event.
 	// If for an ADD event the cluster spec is invalid then it is not added to the local cache
 	// so modifying that local storage will result in another ADD event
-	if _, ok := o.localStorages[apiObject.Name]; ok {
+	localStorageKey := fmt.Sprintf("%s/%s", apiObject.Namespace, apiObject.Name)
+	if _, ok := o.localStorages[localStorageKey]; ok {
 		ev.Type = kwatch.Modified
 	}
 
@@ -142,14 +148,15 @@ func (o *Operator) syncArangoLocalStorage(apiObject *api.ArangoLocalStorage) {
 // handleLocalStorageEvent processed the given event.
 func (o *Operator) handleLocalStorageEvent(event *Event) error {
 	apiObject := event.LocalStorage
+	localStorageKey := fmt.Sprintf("%s/%s", apiObject.Namespace, apiObject.Name)
 
 	if apiObject.Status.State.IsFailed() {
 		localStoragesFailed.Inc()
 		if event.Type == kwatch.Deleted {
-			delete(o.localStorages, apiObject.Name)
+			delete(o.localStorages, localStorageKey)
 			return nil
 		}
-		return errors.WithStack(errors.Newf("ignore failed local storage (%s). Please delete its CR", apiObject.Name))
+		return errors.WithStack(errors.Newf("ignore failed local storage (%s). Please delete its CR", localStorageKey))
 	}
 
 	// Fill in defaults
@@ -161,7 +168,7 @@ func (o *Operator) handleLocalStorageEvent(event *Event) error {
 
 	switch event.Type {
 	case kwatch.Added:
-		if _, ok := o.localStorages[apiObject.Name]; ok {
+		if _, ok := o.localStorages[localStorageKey]; ok {
 			return errors.WithStack(errors.Newf("unsafe state. local storage (%s) was created before but we received event (%s)", apiObject.Name, event.Type))
 		}
 
@@ -170,26 +177,26 @@ func (o *Operator) handleLocalStorageEvent(event *Event) error {
 		if err != nil {
 			return errors.WithStack(errors.Newf("failed to create local storage: %s", err))
 		}
-		o.localStorages[apiObject.Name] = stg
+		o.localStorages[localStorageKey] = stg
 
 		localStoragesCreated.Inc()
 		localStoragesCurrent.Set(float64(len(o.localStorages)))
 
 	case kwatch.Modified:
-		stg, ok := o.localStorages[apiObject.Name]
+		stg, ok := o.localStorages[localStorageKey]
 		if !ok {
-			return errors.WithStack(errors.Newf("unsafe state. local storage (%s) was never created but we received event (%s)", apiObject.Name, event.Type))
+			return errors.WithStack(errors.Newf("unsafe state. local storage (%s) was never created but we received event (%s)", localStorageKey, event.Type))
 		}
 		stg.Update(apiObject)
 		localStoragesModified.Inc()
 
 	case kwatch.Deleted:
-		stg, ok := o.localStorages[apiObject.Name]
+		stg, ok := o.localStorages[localStorageKey]
 		if !ok {
-			return errors.WithStack(errors.Newf("unsafe state. local storage (%s) was never created but we received event (%s)", apiObject.Name, event.Type))
+			return errors.WithStack(errors.Newf("unsafe state. local storage (%s) was never created but we received event (%s)", localStorageKey, event.Type))
 		}
 		stg.Delete()
-		delete(o.localStorages, apiObject.Name)
+		delete(o.localStorages, localStorageKey)
 		localStoragesDeleted.Inc()
 		localStoragesCurrent.Set(float64(len(o.localStorages)))
 	}
@@ -205,7 +212,7 @@ func (o *Operator) makeLocalStorageConfigAndDeps(apiObject *api.ArangoLocalStora
 	}
 	deps := storage.Dependencies{
 		Log: o.Dependencies.LogService.MustGetLogger(logging.LoggerNameStorage).With().
-			Str("localStorage", apiObject.GetName()).
+			Str("localStorage", fmt.Sprintf("%s/%s", apiObject.GetName(), apiObject.GetNamespace())).
 			Logger(),
 		Client:        o.Client,
 		EventRecorder: o.Dependencies.EventRecorder,

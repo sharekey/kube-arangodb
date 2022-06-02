@@ -49,6 +49,7 @@ type Operator interface {
 
 	Name() string
 	Namespace() string
+	WatchNamespace() string
 	Image() string
 
 	Start(threadiness int, stopCh <-chan struct{}) error
@@ -64,13 +65,14 @@ type Operator interface {
 }
 
 // NewOperator creates new operator
-func NewOperator(logger zerolog.Logger, name, namespace, image string) Operator {
+func NewOperator(logger zerolog.Logger, name, namespace, watchNamespace, image string) Operator {
 	o := &operator{
-		name:      name,
-		namespace: namespace,
-		image:     image,
-		logger:    logger,
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name),
+		name:           name,
+		namespace:      namespace,
+		watchNamespace: watchNamespace,
+		image:          image,
+		logger:         logger,
+		workqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name),
 	}
 
 	// Declaration of prometheus interface
@@ -86,9 +88,10 @@ type operator struct {
 
 	logger zerolog.Logger
 
-	name      string
-	namespace string
-	image     string
+	name           string
+	namespace      string
+	watchNamespace string
+	image          string
 
 	informers []cache.SharedInformer
 	starters  []Starter
@@ -102,6 +105,10 @@ type operator struct {
 
 func (o *operator) Namespace() string {
 	return o.namespace
+}
+
+func (o *operator) WatchNamespace() string {
+	return o.watchNamespace
 }
 
 func (o *operator) Name() string {

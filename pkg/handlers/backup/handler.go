@@ -101,7 +101,7 @@ func (h *handler) start(stopCh <-chan struct{}) {
 }
 
 func (h *handler) refresh() error {
-	deployments, err := h.client.DatabaseV1().ArangoDeployments(h.operator.Namespace()).List(context.Background(), meta.ListOptions{})
+	deployments, err := h.client.DatabaseV1().ArangoDeployments(h.operator.WatchNamespace()).List(context.Background(), meta.ListOptions{})
 	if err != nil {
 		return err
 	}
