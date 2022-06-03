@@ -22,10 +22,12 @@ package main
 
 import (
 	"os"
+	"runtime"
 
 	"github.com/arangodb/kube-arangodb/cmd"
 )
 
 func main() {
+	runtime.Breakpoint()
 	os.Exit(cmd.Execute())
 }

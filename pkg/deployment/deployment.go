@@ -304,7 +304,7 @@ func (d *Deployment) send(ev *deploymentEvent) {
 	}
 }
 
-// run is the core the core worker.
+// run is the core worker.
 // It processes the event queue and polls the state of generated
 // resource on a regular basis.
 func (d *Deployment) run() {
@@ -593,7 +593,7 @@ func (d *Deployment) isOwnerOf(obj meta.Object) bool {
 // informer is triggered.
 func (d *Deployment) lookForServiceMonitorCRD() {
 	var err error
-	if d.GetScope().IsNamespaced() {
+	if d.GetScope().IsNamespaced() || d.GetScope().IsCluster() {
 		_, err = d.acs.CurrentClusterCache().ServiceMonitor().V1()
 		if k8sutil.IsForbiddenOrNotFound(err) {
 			return
