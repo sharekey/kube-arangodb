@@ -1,7 +1,7 @@
 ---
 
 operator:
-  image: arangodb/kube-arangodb:1.2.12
+  image: hub.sharekey.com/infra/kube-arangodb:1.2.12-dev-local.2
   imagePullPolicy: IfNotPresent
   imagePullSecrets: []
 
@@ -10,7 +10,7 @@ operator:
   architectures:
   - amd64
 
-  debug: false
+  debug: true
 
   args: []
 
@@ -39,7 +39,7 @@ operator:
 
   nodeSelector: {}
 
-  enableCRDManagement: true
+  enableCRDManagement: false
 
   features:
     deployment: true
