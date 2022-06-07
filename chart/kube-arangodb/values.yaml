@@ -39,8 +39,6 @@ operator:
 
   nodeSelector: {}
 
-  enableCRDManagement: false
-
   features:
     deployment: true
     deploymentReplications: true

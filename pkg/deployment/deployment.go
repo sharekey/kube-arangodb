@@ -257,7 +257,6 @@ func New(config Config, deps Dependencies, apiObject *api.ArangoDeployment) (*De
 	go d.listenForPVCEvents(d.stopCh)
 	go d.listenForSecretEvents(d.stopCh)
 	go d.listenForServiceEvents(d.stopCh)
-	go d.listenForCRDEvents(d.stopCh)
 	if apiObject.Spec.GetMode() == api.DeploymentModeCluster {
 		ci := newClusterScalingIntegration(d)
 		d.clusterScalingIntegration = ci
@@ -374,9 +373,6 @@ func (d *Deployment) run() {
 			log.Debug().Msg("Inspect deployment...")
 			inspectionInterval = d.inspectDeployment(inspectionInterval)
 			log.Debug().Str("interval", inspectionInterval.String()).Msg("...inspected deployment")
-
-		case <-d.inspectCRDTrigger.Done():
-			d.lookForServiceMonitorCRD()
 		case <-d.updateDeploymentTrigger.Done():
 			inspectionInterval = minInspectionInterval
 			if err := d.handleArangoDeploymentUpdatedEvent(context.TODO()); err != nil {
@@ -593,7 +589,7 @@ func (d *Deployment) isOwnerOf(obj meta.Object) bool {
 // informer is triggered.
 func (d *Deployment) lookForServiceMonitorCRD() {
 	var err error
-	if d.GetScope().IsNamespaced() || d.GetScope().IsCluster() {
+	if d.GetScope().IsNamespaced() {
 		_, err = d.acs.CurrentClusterCache().ServiceMonitor().V1()
 		if k8sutil.IsForbiddenOrNotFound(err) {
 			return

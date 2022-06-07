@@ -33,7 +33,7 @@ func (o *Operator) waitForCRD(crdName string, checkFn func() error) {
 
 	for {
 		var err error = nil
-		if o.Scope.IsNamespaced() || o.Scope.IsCluster() {
+		if o.Scope.IsNamespaced() {
 			if checkFn != nil {
 				err = crd.WaitReady(checkFn)
 			}

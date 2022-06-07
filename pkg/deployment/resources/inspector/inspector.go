@@ -22,7 +22,6 @@ package inspector
 
 import (
 	"context"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -374,7 +373,6 @@ func (i *inspectorState) refreshInThreads(ctx context.Context, threads int, load
 			defer func() {
 				p <- struct{}{}
 			}()
-			runtime.Breakpoint()
 			loaders[id].Load(ctx, n)
 		}(id)
 	}
